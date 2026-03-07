@@ -331,61 +331,94 @@ static void ssh_usage() {
     ios_exit(1);
 }
 
-int ssh_main(int argc, char** argv) {
-    // TODO: extract options
-    char* passphrase = NULL;
-    int port = 22;
-    int connection_timeout = 10;
+typedef struct {
+    char* passphrase;
+    int port;
+    int connection_timeout;
     char strport[NI_MAXSERV];
     char* user;
     char* host;
-    char* commandLine = NULL;
-    int verboseFlag = 0;
-    if (argc < 2) ssh_usage();
+    char* commandLine;
+    int verboseFlag;
+} ssh_options;
+
+static void parse_ssh_options(int* argc, char*** argv, ssh_options* options) {
+    options->passphrase = NULL;
+    options->port = 22;
+    options->connection_timeout = 10;
+    options->user = NULL;
+    options->host = NULL;
+    options->commandLine = NULL;
+    options->verboseFlag = 0;
+
+    if (*argc < 2) ssh_usage();
     // Assume several arguments, making sense
-    argv++; // go past ssh (in argv[0])
-    argc--;
-    
-    while (argv[0][0] == '-') {
-        if (strcmp(argv[0], "-q") == 0) {
-            verboseFlag = 0; // quiet
-        } else if (strcmp(argv[0], "-p") == 0) {
-            port = atoi(argv[1]); // port configuration
-            argv += 1; // skip past the port
-            argc--;
+    (*argv)++; // go past ssh (in argv[0])
+    (*argc)--;
+
+    while (*argc > 0 && (*argv)[0][0] == '-') {
+        if (strcmp((*argv)[0], "-q") == 0) {
+            options->verboseFlag = 0; // quiet
+        } else if (strcmp((*argv)[0], "-p") == 0) {
+            if (*argc > 1) {
+                options->port = atoi((*argv)[1]); // port configuration
+                (*argv) += 1; // skip past the port
+                (*argc)--;
+            } else {
+                ssh_usage();
+            }
         } else {
             ssh_usage();
         }
-        argv++; argc--;
+        (*argv)++; (*argc)--;
     }
-    
-    snprintf(strport, sizeof strport, "%d", port);
-    // argv[-1] = ssh
-    // argv[0] = user@host
-    user = argv[0];
-    host = strchr(user, '@') + 1;
-    if (host == 1) { // no user specified
-        host = argv[0];
-        user = "mobile"; // consistent behaviour
-    } else  *(host - 1) = 0x00; // null-terminate user
+
+    if (*argc == 0) ssh_usage();
+
+    snprintf(options->strport, sizeof(options->strport), "%d", options->port);
+    // (*argv)[0] = user@host
+    options->user = (*argv)[0];
+    char* at_symbol = strchr(options->user, '@');
+    if (at_symbol == NULL) { // no user specified
+        options->host = options->user;
+        options->user = "mobile"; // consistent behaviour
+    } else {
+        *at_symbol = '\0';
+        options->host = at_symbol + 1;
+    }
+
     // Concatenate all remaining options to form the command string:
-    int bufferLength = 0;
-    int removeQuotes = 0;
-    if (argc > 1) { // is there a command after the connection information?
-        for (int i = 1; i < argc; i++) bufferLength += strlen(argv[i]) + 1;
-        if ((argv[1][0] == '\'') || (argv[1][0] == '\"')) { removeQuotes = 1; bufferLength -= 2;} // remove the quotes
-        commandLine = (char*) malloc(bufferLength * sizeof(char));
+    if (*argc > 1) { // is there a command after the connection information?
+        int bufferLength = 0;
+        int removeQuotes = 0;
+        for (int i = 1; i < *argc; i++) bufferLength += strlen((*argv)[i]) + 1;
+        if (((*argv)[1][0] == '\'') || ((*argv)[1][0] == '\"')) { removeQuotes = 1; bufferLength -= 2;} // remove the quotes
+        options->commandLine = (char*) malloc(bufferLength * sizeof(char));
         int position = 0;
-        strcpy(commandLine + position, argv[1] + removeQuotes);
-        position += strlen(argv[1]) + 1 - removeQuotes;
-        commandLine[position - 1] = ' ';
-        for (int i = 2; i < argc; i++) {
-            strcpy(commandLine + position, argv[i]);
-            position += strlen(argv[i]) + 1;
-            commandLine[position - 1] = ' ';
+        strcpy(options->commandLine + position, (*argv)[1] + removeQuotes);
+        position += strlen((*argv)[1]) + 1 - removeQuotes;
+        options->commandLine[position - 1] = ' ';
+        for (int i = 2; i < *argc; i++) {
+            strcpy(options->commandLine + position, (*argv)[i]);
+            position += strlen((*argv)[i]) + 1;
+            options->commandLine[position - 1] = ' ';
         }
-        commandLine[bufferLength - 1] = 0x0; // null-terminate the command
+        options->commandLine[bufferLength - 1] = 0x0; // null-terminate the command
     }
+}
+
+int ssh_main(int argc, char** argv) {
+    ssh_options options;
+    parse_ssh_options(&argc, &argv, &options);
+
+    char* passphrase = options.passphrase;
+    int port = options.port;
+    int connection_timeout = options.connection_timeout;
+    char* strport = options.strport;
+    char* user = options.user;
+    char* host = options.host;
+    char* commandLine = options.commandLine;
+    int verboseFlag = options.verboseFlag;
     // Does the hostname exist?
     struct addrinfo hints, *addrs;
     struct sockaddr_storage hostaddr;
@@ -407,7 +440,7 @@ int ssh_main(int argc, char** argv) {
         if (ai->ai_family != AF_INET && ai->ai_family != AF_INET6) {continue;}
         if (getnameinfo(ai->ai_addr, ai->ai_addrlen,
                         ntop, sizeof(ntop), strport,
-                        sizeof(strport), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+                        NI_MAXSERV, NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
             fprintf(thread_stderr, "ssh_connect: getnameinfo failed\n");
             continue;
         }
