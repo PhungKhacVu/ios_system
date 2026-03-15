@@ -41,5 +41,29 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
+      - name: Build curl_ios for iOS Simulator (Debug)
+        run: |
+          xcodebuild \
+            -project curl_ios.xcodeproj \
+            -scheme curl_ios \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -quiet \
+            build \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Build libarchive_ios for iOS Simulator (Debug)
+        run: |
+          xcodebuild \
+            -project libarchive_ios/libarchive_ios.xcodeproj \
+            -scheme libarchive_ios \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -quiet \
+            build \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
       - name: Validate Swift Package resolution
         run: swift package resolve
